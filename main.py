@@ -30,6 +30,7 @@ def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode("utf-8")).hexdigest()
 
 def get_room_and_verify_password(room_name: str, db: Session, x_room_password: str = Header(...)):
+    room_name = room_name.strip().lower()
     room = db.query(models.Room).filter(models.Room.name == room_name).first()
     if not room:
         raise HTTPException(
@@ -47,8 +48,9 @@ def get_room_and_verify_password(room_name: str, db: Session, x_room_password: s
 
 @app.post("/api/rooms", response_model=schemas.RoomStatusResponse, status_code=status.HTTP_201_CREATED)
 def create_room(room_data: schemas.RoomCreate, db: Session = Depends(get_db)):
+    normalized_name = room_data.name.strip().lower()
     # Check if room already exists
-    existing_room = db.query(models.Room).filter(models.Room.name == room_data.name).first()
+    existing_room = db.query(models.Room).filter(models.Room.name == normalized_name).first()
     if existing_room:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -64,7 +66,7 @@ def create_room(room_data: schemas.RoomCreate, db: Session = Depends(get_db)):
 
     # Create new Room
     db_room = models.Room(
-        name=room_data.name,
+        name=normalized_name,
         password_hash=hash_password(room_data.password),
         status="collecting"
     )
@@ -87,7 +89,8 @@ def create_room(room_data: schemas.RoomCreate, db: Session = Depends(get_db)):
 
 @app.post("/api/rooms/verify", response_model=schemas.RoomStatusResponse)
 def verify_room(verify_data: schemas.RoomVerify, db: Session = Depends(get_db)):
-    room = db.query(models.Room).filter(models.Room.name == verify_data.name).first()
+    normalized_name = verify_data.name.strip().lower()
+    room = db.query(models.Room).filter(models.Room.name == normalized_name).first()
     if not room:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -106,7 +109,8 @@ def verify_room(verify_data: schemas.RoomVerify, db: Session = Depends(get_db)):
 @app.get("/api/rooms/{room_name}/status", response_model=schemas.RoomStatusResponse)
 def get_room_status(room_name: str, db: Session = Depends(get_db)):
     # Publicly accessible to allow clients to check progress
-    room = db.query(models.Room).filter(models.Room.name == room_name).first()
+    normalized_name = room_name.strip().lower()
+    room = db.query(models.Room).filter(models.Room.name == normalized_name).first()
     if not room:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -123,6 +127,7 @@ def submit_confessions(
 ):
     # Verify room and password
     room = get_room_and_verify_password(room_name, db, x_room_password)
+    room_name = room.name
 
     if room.status == "completed":
         raise HTTPException(
@@ -224,6 +229,7 @@ def add_participant(
     x_room_password: str = Header(...)
 ):
     room = get_room_and_verify_password(room_name, db, x_room_password)
+    room_name = room.name
 
     existing = db.query(models.Participant).filter(
         models.Participant.room_name == room_name,
@@ -255,6 +261,7 @@ def delete_participant(
     x_room_password: str = Header(...)
 ):
     room = get_room_and_verify_password(room_name, db, x_room_password)
+    room_name = room.name
 
     p = db.query(models.Participant).filter(
         models.Participant.room_name == room_name,
