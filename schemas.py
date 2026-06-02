@@ -39,3 +39,7 @@ class RoomResultsResponse(BaseModel):
     status: str
     # Map participant name to their list of anonymous confessions
     results: Dict[str, List[str]]
+
+class ParticipantCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=50)
+

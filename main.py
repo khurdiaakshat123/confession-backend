@@ -215,3 +215,69 @@ def get_room_results(room_name: str, db: Session = Depends(get_db), x_room_passw
         "status": room.status,
         "results": results
     }
+
+@app.post("/api/rooms/{room_name}/participants", response_model=schemas.RoomStatusResponse)
+def add_participant(
+    room_name: str,
+    payload: schemas.ParticipantCreate,
+    db: Session = Depends(get_db),
+    x_room_password: str = Header(...)
+):
+    room = get_room_and_verify_password(room_name, db, x_room_password)
+
+    existing = db.query(models.Participant).filter(
+        models.Participant.room_name == room_name,
+        models.Participant.name == payload.name.strip()
+    ).first()
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Participant '{payload.name}' already exists in this room"
+        )
+
+    new_p = models.Participant(
+        room_name=room_name,
+        name=payload.name.strip(),
+        has_confessed=False
+    )
+    db.add(new_p)
+    room.status = "collecting"
+    
+    db.commit()
+    db.refresh(room)
+    return room
+
+@app.delete("/api/rooms/{room_name}/participants/{participant_id}", response_model=schemas.RoomStatusResponse)
+def delete_participant(
+    room_name: str,
+    participant_id: int,
+    db: Session = Depends(get_db),
+    x_room_password: str = Header(...)
+):
+    room = get_room_and_verify_password(room_name, db, x_room_password)
+
+    p = db.query(models.Participant).filter(
+        models.Participant.room_name == room_name,
+        models.Participant.id == participant_id
+    ).first()
+    if not p:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Participant not found in this room"
+        )
+
+    db.delete(p)
+    db.commit()
+
+    all_participants = db.query(models.Participant).filter(models.Participant.room_name == room_name).all()
+    if not all_participants:
+        room.status = "collecting"
+    elif all(x.has_confessed for x in all_participants):
+        room.status = "completed"
+    else:
+        room.status = "collecting"
+        
+    db.commit()
+    db.refresh(room)
+    return room
+
