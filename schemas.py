@@ -34,12 +34,27 @@ class ConfessionsSubmitRequest(BaseModel):
     from_participant_id: int
     confessions: List[SingleConfessionInput]
 
+class ConfessionResultItem(BaseModel):
+    id: int
+    confession_text: str
+    agree_count: int
+    not_agree_count: int
+    cant_comment_count: int
+
+    class Config:
+        from_attributes = True
+
 class RoomResultsResponse(BaseModel):
     room_name: str
     status: str
-    # Map participant name to their list of anonymous confessions
-    results: Dict[str, List[str]]
+    results: Dict[str, List[ConfessionResultItem]]
 
 class ParticipantCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=50)
 
+class SingleEndorsementInput(BaseModel):
+    confession_id: int
+    vote: str
+
+class EndorsementSubmitRequest(BaseModel):
+    votes: List[SingleEndorsementInput]

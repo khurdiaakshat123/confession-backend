@@ -201,6 +201,7 @@ def submit_confessions(
 def get_room_results(room_name: str, db: Session = Depends(get_db), x_room_password: str = Header(...)):
     # Verify room and password
     room = get_room_and_verify_password(room_name, db, x_room_password)
+    room_name = room.name
 
     # Retrieve all participants and their confessions
     participants = db.query(models.Participant).filter(models.Participant.room_name == room_name).all()
@@ -213,13 +214,64 @@ def get_room_results(room_name: str, db: Session = Depends(get_db), x_room_passw
             models.Confession.target_participant_id == p.id
         ).all()
         
-        results[p.name] = [c.confession_text for c in confessions]
+        confession_items = []
+        for c in confessions:
+            agree = db.query(models.ConfessionEndorsement).filter(
+                models.ConfessionEndorsement.confession_id == c.id,
+                models.ConfessionEndorsement.vote == "agree"
+            ).count()
+            not_agree = db.query(models.ConfessionEndorsement).filter(
+                models.ConfessionEndorsement.confession_id == c.id,
+                models.ConfessionEndorsement.vote == "not_agree"
+            ).count()
+            cant_comment = db.query(models.ConfessionEndorsement).filter(
+                models.ConfessionEndorsement.confession_id == c.id,
+                models.ConfessionEndorsement.vote == "cant_comment"
+            ).count()
+            
+            confession_items.append(
+                schemas.ConfessionResultItem(
+                    id=c.id,
+                    confession_text=c.confession_text,
+                    agree_count=agree,
+                    not_agree_count=not_agree,
+                    cant_comment_count=cant_comment
+                )
+            )
+        
+        results[p.name] = confession_items
 
     return {
         "room_name": room.name,
         "status": room.status,
         "results": results
     }
+
+@app.post("/api/rooms/{room_name}/endorsements", status_code=status.HTTP_200_OK)
+def submit_endorsements(
+    room_name: str,
+    payload: schemas.EndorsementSubmitRequest,
+    db: Session = Depends(get_db),
+    x_room_password: str = Header(...)
+):
+    room = get_room_and_verify_password(room_name, db, x_room_password)
+    room_name = room.name
+    
+    for v in payload.votes:
+        if v.vote not in ['agree', 'not_agree', 'cant_comment']:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid vote type: {v.vote}"
+            )
+        db_vote = models.ConfessionEndorsement(
+            room_name=room_name,
+            confession_id=v.confession_id,
+            vote=v.vote
+        )
+        db.add(db_vote)
+    db.commit()
+    return {"detail": "Endorsements submitted successfully"}
+
 
 @app.post("/api/rooms/{room_name}/participants", response_model=schemas.RoomStatusResponse)
 def add_participant(
